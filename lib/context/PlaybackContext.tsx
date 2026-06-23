@@ -8,14 +8,15 @@ import {
     useState,
     type ReactNode,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { mediaSocket } from '../ws/media-socket';
 import { playlistPlayer, type PlaybackState } from '../playback/playlist-player';
 import { mediaCache } from '../cache/media-cache';
 import { playlistsApi } from '../api/playlists.api';
 import { playlistKeys } from '../api/query-keys';
 import { usePairing } from './PairingContext';
-import type { ControlCommand } from '../api/types';
+import type { ControlCommand, Playlist } from '../api/types';
 import { snapshotStore } from '../snapshot/snapshot-store';
 
 interface PlaybackContextValue {
@@ -32,11 +33,21 @@ const SESSION_REPORT_INTERVAL_MS = 5000;
 export function PlaybackProvider({ children }: { children: ReactNode }) {
     const { pairing } = usePairing();
     const queryClient = useQueryClient();
+    const router = useRouter();
     const [playbackState, setPlaybackState] = useState<PlaybackState>(
         playlistPlayer.getState(),
     );
     const [wsConnected, setWsConnected] = useState(false);
     const lastReportRef = useRef(0);
+    const lastLoadedPlaylistIdRef = useRef<string | null>(null);
+
+    const { data: assignedPlaylist } = useQuery<Playlist | null>({
+        queryKey: playlistKeys.assigned(pairing?.deviceId ?? ''),
+        queryFn: ({ signal }) =>
+            playlistsApi.getAssignedPlaylist(pairing!.deviceId, signal),
+        enabled: !!pairing?.deviceId,
+        refetchInterval: 30_000,
+    });
 
     useEffect(() => {
         return playlistPlayer.subscribe(setPlaybackState);
@@ -68,6 +79,27 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         [reportSession],
     );
 
+    const startAssignedPlaylist = useCallback(
+        async (playlist: Playlist) => {
+            if (!playlist.items?.length) return;
+            if (playlist.id === lastLoadedPlaylistIdRef.current) return;
+
+            lastLoadedPlaylistIdRef.current = playlist.id;
+            await loadAndPlay(playlist.items);
+            router.push('/(main)/player');
+        },
+        [loadAndPlay, router],
+    );
+
+    useEffect(() => {
+        if (assignedPlaylist === null) {
+            lastLoadedPlaylistIdRef.current = null;
+            return;
+        }
+        if (!assignedPlaylist?.items?.length) return;
+        void startAssignedPlaylist(assignedPlaylist);
+    }, [assignedPlaylist, wsConnected, startAssignedPlaylist]);
+
     const handleControlCommand = useCallback(
         (command: ControlCommand) => {
             switch (command.command) {
@@ -96,7 +128,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             .getAssignedPlaylist(pairing.deviceId)
                             .then((pl) => {
                                 if (pl?.items?.length) {
+                                    lastLoadedPlaylistIdRef.current = pl.id;
                                     loadAndPlay(pl.items);
+                                    router.push('/(main)/player');
                                 }
                             })
                             .catch(() => undefined);
@@ -107,7 +141,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             }
             reportSession(true);
         },
-        [pairing?.deviceId, queryClient, reportSession, loadAndPlay],
+        [pairing?.deviceId, queryClient, reportSession, loadAndPlay, router],
     );
 
     useEffect(() => {

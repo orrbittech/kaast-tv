@@ -9,6 +9,7 @@ import {
     Urbanist_500Medium,
     Urbanist_600SemiBold,
 } from '@expo-google-fonts/urbanist';
+import { Caveat_700Bold } from '@expo-google-fonts/caveat';
 import { queryClient } from '../lib/api/query-client';
 import { PairingProvider } from '../lib/context/PairingContext';
 import { PlaybackProvider } from '../lib/context/PlaybackContext';
@@ -32,6 +33,7 @@ export default function RootLayout() {
         Urbanist_400Regular,
         Urbanist_500Medium,
         Urbanist_600SemiBold,
+        Caveat_700Bold,
     });
 
     useEffect(() => {

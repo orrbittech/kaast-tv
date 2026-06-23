@@ -84,30 +84,14 @@ function PlaylistItemRow({
 export default function LibraryScreen() {
     const router = useRouter();
     const { pairing } = usePairing();
-    const { wsConnected, loadAndPlay } = usePlayback();
+    const { loadAndPlay } = usePlayback();
     const { data: playlist, isLoading, refetch, isRefetching } =
         useAssignedPlaylist(pairing?.deviceId);
-    const [syncing, setSyncing] = useState(false);
 
     const items = useMemo(
         () => [...(playlist?.items ?? [])].sort((a, b) => a.order - b.order),
         [playlist?.items],
     );
-
-    const handleSync = useCallback(async () => {
-        setSyncing(true);
-        try {
-            if (!items.length) {
-                await refetch();
-                return;
-            }
-            await mediaCache.syncPlaylistItems(
-                items.map((i) => ({ id: i.id, mediaUrl: i.mediaUrl })),
-            );
-        } finally {
-            setSyncing(false);
-        }
-    }, [items, refetch]);
 
     const canPlay = items.length > 0;
 
@@ -136,13 +120,8 @@ export default function LibraryScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.title}>
-                        {playlist?.name ?? 'Library'}
-                    </Text>
-                    <Text style={styles.subtitle}>
-                        {wsConnected ? 'Connected' : 'Reconnecting…'} ·{' '}
-                        {items.length} item{items.length === 1 ? '' : 's'}
-                    </Text>
+                    <Text style={styles.title}>KAAST</Text>
+                    <Text style={styles.subtitle}>Multimedia Management</Text>
                 </View>
                 <TVFocusGuideView
                     style={styles.actions}
@@ -150,20 +129,11 @@ export default function LibraryScreen() {
                     trapFocusRight
                 >
                     <TVFocusableButton
-                        label={syncing ? 'Syncing…' : 'Sync now'}
-                        onPress={handleSync}
-                        disabled={syncing}
-                        hasTVPreferredFocus={!!playlist}
-                    />
-                    <TVFocusableButton
                         label="Play"
                         variant="primary"
                         onPress={handlePlay}
                         disabled={!canPlay}
-                    />
-                    <TVFocusableButton
-                        label="Settings"
-                        onPress={() => router.push('/(main)/settings')}
+                        hasTVPreferredFocus={!!playlist}
                     />
                 </TVFocusGuideView>
             </View>
@@ -219,9 +189,10 @@ const styles = StyleSheet.create({
         gap: spacing.lg,
     },
     title: {
-        fontFamily: fonts.semibold,
+        fontFamily: fonts.brand,
         color: colors.text,
         fontSize: 32,
+        letterSpacing: 1,
     },
     subtitle: {
         color: colors.textMuted,
