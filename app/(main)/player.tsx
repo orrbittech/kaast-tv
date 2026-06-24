@@ -13,7 +13,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Text } from '../../components/Text';
 import { usePlayback } from '../../lib/context/PlaybackContext';
 import { playlistPlayer } from '../../lib/playback/playlist-player';
-import { useAssignedPlaylist } from '../../lib/hooks';
+import { useAssignedPlaylist, useDeviceSubscription } from '../../lib/hooks';
 import { usePairing } from '../../lib/context/PairingContext';
 import { snapshotStore } from '../../lib/snapshot/snapshot-store';
 import { colors, spacing } from '../../lib/theme/colors';
@@ -29,6 +29,8 @@ export default function PlayerScreen() {
     const { pairing } = usePairing();
     const { playbackState, loadAndPlay } = usePlayback();
     const { data: scheduled } = useAssignedPlaylist(pairing?.deviceId);
+    const { data: subscription } = useDeviceSubscription(pairing?.deviceId);
+    const subscriptionActive = subscription?.isActive !== false;
     const playlist = scheduled?.playlist ?? null;
     const imageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const captureViewRef = useRef<View>(null);

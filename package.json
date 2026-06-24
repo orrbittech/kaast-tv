@@ -1,5 +1,9 @@
 {
-  "name": "tv",
+  "name": "kaast-tv",
+  "description": "KAAST Apple TV / Android TV player — proprietary product of Orrbit Systems",
+  "author": "Brandon Nkawu",
+  "license": "UNLICENSED",
+  "homepage": "https://kaast.app",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {

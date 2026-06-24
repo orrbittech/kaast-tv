@@ -26,10 +26,17 @@ export interface GeneratePairingCodeResponse {
 
 /** Pairing status from GET /pairing/:code/status */
 export interface PairingStatus {
-    status: 'pending' | 'verified' | 'expired';
+    status: 'pending' | 'verified' | 'expired' | 'subscription_required';
     deviceId?: string;
     clerkOrgId?: string;
     locationId?: string | null;
+    upgradeUrl?: string;
+}
+
+/** Device subscription status from GET /devices/:deviceId/subscription */
+export interface DeviceSubscriptionStatus {
+    isActive: boolean;
+    upgradeUrl: string;
 }
 
 /** Persisted pairing context after successful pairing */

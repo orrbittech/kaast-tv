@@ -1,3 +1,4 @@
+/** KAAST — Proprietary software of Orrbit Systems (https://www.orrbit.co.za/) */
 import { Stack } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
