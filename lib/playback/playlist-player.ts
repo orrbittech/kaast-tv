@@ -19,9 +19,20 @@ export interface PlaybackState {
     volume: number;
     loop: boolean;
     currentItem: PlaybackItem | null;
+    playlistId: string | null;
+    scheduleId: string | null;
 }
 
 export type PlaybackListener = (state: PlaybackState) => void;
+
+export interface LoadPlaylistOptions {
+    startIndex?: number;
+    startPosition?: number;
+    loop?: boolean;
+    playing?: boolean;
+    playlistId?: string | null;
+    scheduleId?: string | null;
+}
 
 function sortItems(items: PlaylistItem[]): PlaylistItem[] {
     return [...items].sort((a, b) => a.order - b.order);
@@ -37,6 +48,8 @@ export class PlaylistPlayerEngine {
         volume: 1,
         loop: true,
         currentItem: null,
+        playlistId: null,
+        scheduleId: null,
     };
 
     private listeners = new Set<PlaybackListener>();
@@ -60,25 +73,54 @@ export class PlaylistPlayerEngine {
     async loadPlaylist(
         items: PlaylistItem[],
         resolveUri: (mediaUrl: string) => Promise<string>,
+        options: LoadPlaylistOptions = {},
     ): Promise<void> {
         const sorted = sortItems(items);
-        const playbackItems: PlaybackItem[] = await Promise.all(
-            sorted.map(async (item) => {
-                const playbackUri = await resolveUri(item.mediaUrl);
-                return {
+        const playbackItems: PlaybackItem[] = [];
+
+        for (const item of sorted) {
+            const mediaType = getMediaTypeForFilter(item);
+            try {
+                const playbackUri =
+                    mediaType === 'image'
+                        ? item.mediaUrl
+                        : await resolveUri(item.mediaUrl);
+                playbackItems.push({
                     ...item,
                     playbackUri,
-                    mediaType: getMediaTypeForFilter(item),
-                };
-            }),
+                    mediaType,
+                });
+            } catch (err) {
+                console.warn(
+                    '[Playlist Player] Skipping unplayable item:',
+                    item.mediaUrl,
+                    err instanceof Error ? err.message : err,
+                );
+            }
+        }
+
+        if (playbackItems.length === 0) {
+            throw new Error('No playable items in playlist');
+        }
+
+        const startIndex = Math.min(
+            Math.max(options.startIndex ?? 0, 0),
+            Math.max(playbackItems.length - 1, 0),
         );
+        const currentItem = playbackItems[startIndex];
+        const startPosition = options.startPosition ?? 0;
 
         this.setState({
             items: playbackItems,
-            currentIndex: 0,
-            playing: playbackItems.length > 0,
-            position: 0,
-            duration: this.deriveDuration(playbackItems[0]),
+            currentIndex: startIndex,
+            playing:
+                options.playing ??
+                (playbackItems.length > 0 && options.playing !== false),
+            position: startPosition,
+            duration: this.deriveDuration(currentItem),
+            loop: options.loop ?? this.state.loop,
+            playlistId: options.playlistId ?? null,
+            scheduleId: options.scheduleId ?? null,
         });
     }
 
@@ -196,6 +238,9 @@ export class PlaylistPlayerEngine {
         duration: number;
         playing: boolean;
         volume: number;
+        playlistId: string | null;
+        scheduleId: string | null;
+        currentItemIndex: number;
     } {
         const item = this.state.currentItem;
         return {
@@ -204,12 +249,25 @@ export class PlaylistPlayerEngine {
             duration: this.state.duration,
             playing: this.state.playing,
             volume: this.state.volume,
+            playlistId: this.state.playlistId,
+            scheduleId: this.state.scheduleId,
+            currentItemIndex: this.state.currentIndex,
         };
     }
 
     isImageItem(item?: PlaybackItem | null): boolean {
         if (!item) return false;
         return item.mediaType === 'image' || isImageUrl(item.mediaUrl);
+    }
+
+    isAudioItem(item?: PlaybackItem | null): boolean {
+        if (!item) return false;
+        return item.mediaType === 'audio';
+    }
+
+    isMediaPlayerItem(item?: PlaybackItem | null): boolean {
+        if (!item) return false;
+        return !this.isImageItem(item);
     }
 }
 

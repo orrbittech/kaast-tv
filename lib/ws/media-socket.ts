@@ -8,6 +8,10 @@ const MAX_BACKOFF_MS = 60_000;
 
 type ControlHandler = (command: ControlCommand) => void;
 type ConnectionHandler = (connected: boolean) => void;
+type PlaylistUpdatedHandler = (payload: {
+    playlistId: string;
+    clerkOrgId: string;
+}) => void;
 
 class MediaSocketClient {
     private socket: Socket | null = null;
@@ -16,6 +20,7 @@ class MediaSocketClient {
     private reconnectAttempt = 0;
     private controlHandler: ControlHandler | null = null;
     private connectionHandler: ConnectionHandler | null = null;
+    private playlistUpdatedHandler: PlaylistUpdatedHandler | null = null;
 
     onControl(handler: ControlHandler): () => void {
         this.controlHandler = handler;
@@ -28,6 +33,15 @@ class MediaSocketClient {
         this.connectionHandler = handler;
         return () => {
             if (this.connectionHandler === handler) this.connectionHandler = null;
+        };
+    }
+
+    onPlaylistUpdated(handler: PlaylistUpdatedHandler): () => void {
+        this.playlistUpdatedHandler = handler;
+        return () => {
+            if (this.playlistUpdatedHandler === handler) {
+                this.playlistUpdatedHandler = null;
+            }
         };
     }
 
@@ -64,6 +78,14 @@ class MediaSocketClient {
             if (!payload?.deviceId || !this.pairing) return;
             if (payload.deviceId !== this.pairing.deviceId) return;
             this.controlHandler?.(payload);
+        });
+
+        this.socket.on('playlist:updated', (payload: { playlistId?: string }) => {
+            if (!payload?.playlistId || !this.pairing) return;
+            this.playlistUpdatedHandler?.({
+                playlistId: payload.playlistId,
+                clerkOrgId: this.pairing.clerkOrgId,
+            });
         });
     }
 

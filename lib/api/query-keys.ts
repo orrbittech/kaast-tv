@@ -7,4 +7,6 @@ export const playlistKeys = {
     all: ['playlists'] as const,
     assigned: (deviceId: string) =>
         [...playlistKeys.all, 'assigned', deviceId] as const,
+    scheduled: (deviceId: string) =>
+        [...playlistKeys.all, 'scheduled', deviceId] as const,
 };
