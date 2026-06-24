@@ -1,4 +1,5 @@
 import type { CacheStatus, CachedMediaEntry } from '../api/types';
+import { validateMediaUrl as probeMediaUrl, isImageUrl } from '../utils/media';
 
 type CacheListener = () => void;
 
@@ -39,7 +40,33 @@ class MediaCacheService {
     }
 
     async resolvePlaybackUri(mediaUrl: string): Promise<string> {
+        if (isImageUrl(mediaUrl)) {
+            return mediaUrl;
+        }
+
+        const validation = await this.validateMediaUrl(mediaUrl);
+        if (!validation.ok) {
+            throw new Error(validation.error ?? 'Media URL is not playable');
+        }
         return mediaUrl;
+    }
+
+    async validateMediaUrl(mediaUrl: string): Promise<{ ok: boolean; error?: string }> {
+        await this.init();
+        const cached = this.entries.get(mediaUrl);
+        if (cached?.status === 'cached') {
+            return { ok: true };
+        }
+        if (cached?.status === 'error' && cached.error && !isImageUrl(mediaUrl)) {
+            return { ok: false, error: cached.error };
+        }
+
+        const result = await probeMediaUrl(mediaUrl);
+        this.upsertEntry(mediaUrl, {
+            status: result.ok ? 'cached' : 'error',
+            error: result.ok ? null : result.error ?? 'Validation failed',
+        });
+        return result;
     }
 
     private upsertEntry(
@@ -91,13 +118,17 @@ class MediaCacheService {
         });
 
         try {
-            const response = await fetch(mediaUrl, { method: 'HEAD' });
-            const bytes = Number(response.headers.get('content-length') ?? 0);
+            const validation = await this.validateMediaUrl(mediaUrl);
+            const bytes = Number(
+                (await fetch(mediaUrl, { method: 'HEAD', redirect: 'follow' })).headers.get(
+                    'content-length',
+                ) ?? 0,
+            );
             this.upsertEntry(mediaUrl, {
                 playlistItemId,
-                bytes: Number.isFinite(bytes) ? bytes : 0,
-                status: response.ok ? 'cached' : 'error',
-                error: response.ok ? null : `HTTP ${response.status}`,
+                bytes: validation.ok && Number.isFinite(bytes) ? bytes : 0,
+                status: validation.ok ? 'cached' : 'error',
+                error: validation.ok ? null : validation.error ?? 'Validation failed',
             });
         } catch (err) {
             this.upsertEntry(mediaUrl, {

@@ -76,6 +76,19 @@ export default function PairingScreen() {
         }
     }, [status, completePairing]);
 
+    if (status?.status === 'subscription_required') {
+        return (
+            <View style={styles.container}>
+                <Text style={styles.brand}>Kaast TV</Text>
+                <Text style={styles.title}>Trial ended</Text>
+                <Text style={styles.subtitle}>
+                    This organization&apos;s trial has ended. Subscribe at kaast.app/billing
+                    from your phone, then pair this TV again.
+                </Text>
+            </View>
+        );
+    }
+
     const hint =
         status?.status === 'pending'
             ? `Waiting for pairing… Refreshes in ${formatCountdown(countdownMs)}`

@@ -1,6 +1,7 @@
 export { usePairingStatus } from './usePairingStatus';
 export { usePairingCode, PAIRING_CODE_TTL_MS } from './usePairingCode';
 export { useAssignedPlaylist } from './useAssignedPlaylist';
+export { useDeviceSubscription } from './useDeviceSubscription';
 export {
     useMediaCacheStatus,
     useMediaCacheStats,
