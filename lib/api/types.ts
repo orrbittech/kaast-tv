@@ -49,6 +49,40 @@ export interface MediaSessionState {
     playing: boolean;
     volume?: number;
     snapshotData?: string | null;
+    playlistId?: string | null;
+    scheduleId?: string | null;
+    currentItemIndex?: number;
+}
+
+export interface ScheduledPlaybackState {
+    playlistId: string | null;
+    scheduleId: string | null;
+    currentItemIndex: number;
+    position: number;
+    duration: number;
+    playing: boolean;
+    volume: number | null;
+    mediaUrl: string | null;
+    pausedAt: string | null;
+    slotStartedAt: string | null;
+    accumulatedPauseMs: number;
+}
+
+export interface PlaylistScheduleInfo {
+    id: string;
+    startTime: string;
+    endTime: string;
+    loopPlaylist: boolean;
+    priority: number;
+    repeatType: string;
+    timezone: string;
+}
+
+export interface ScheduledForDeviceResponse {
+    source: 'schedule' | 'manual' | null;
+    schedule: PlaylistScheduleInfo | null;
+    playlist: Playlist | null;
+    playbackState: ScheduledPlaybackState | null;
 }
 
 /** Remote control command from WebSocket */

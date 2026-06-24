@@ -38,18 +38,8 @@ export default function SettingsScreen() {
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Device</Text>
                 <Text style={styles.value}>
-                    {pairing?.deviceId ?? 'Not paired'}
+                    {pairing ? 'Connected' : 'Not paired'}
                 </Text>
-                {pairing?.locationId ? (
-                    <Text style={styles.meta}>
-                        Location: {pairing.locationId}
-                    </Text>
-                ) : null}
-                {pairing?.clerkOrgId ? (
-                    <Text style={styles.meta}>
-                        Organization: {pairing.clerkOrgId}
-                    </Text>
-                ) : null}
             </View>
 
             <View style={styles.section}>

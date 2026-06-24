@@ -1,17 +1,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { playlistsApi } from '../api/playlists.api';
 import { playlistKeys } from '../api/query-keys';
-import type { Playlist } from '../api/types';
+import type { ScheduledForDeviceResponse } from '../api/types';
 
+export function useScheduledPlaylist(
+    deviceId: string | undefined,
+    options?: { enabled?: boolean },
+) {
+    return useQuery<ScheduledForDeviceResponse>({
+        queryKey: playlistKeys.scheduled(deviceId ?? ''),
+        queryFn: ({ signal }) =>
+            playlistsApi.getScheduledForDevice(deviceId!, signal),
+        enabled: (options?.enabled ?? true) && !!deviceId,
+        refetchInterval: 30_000,
+    });
+}
+
+/** @deprecated Use useScheduledPlaylist */
 export function useAssignedPlaylist(
     deviceId: string | undefined,
     options?: { enabled?: boolean },
 ) {
-    return useQuery<Playlist | null>({
-        queryKey: playlistKeys.assigned(deviceId ?? ''),
-        queryFn: ({ signal }) =>
-            playlistsApi.getAssignedPlaylist(deviceId!, signal),
-        enabled: (options?.enabled ?? true) && !!deviceId,
-        refetchInterval: 30_000,
-    });
+    return useScheduledPlaylist(deviceId, options);
 }

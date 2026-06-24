@@ -85,8 +85,9 @@ export default function LibraryScreen() {
     const router = useRouter();
     const { pairing } = usePairing();
     const { loadAndPlay } = usePlayback();
-    const { data: playlist, isLoading, refetch, isRefetching } =
+    const { data: scheduled, isLoading, refetch, isRefetching } =
         useAssignedPlaylist(pairing?.deviceId);
+    const playlist = scheduled?.playlist ?? null;
 
     const items = useMemo(
         () => [...(playlist?.items ?? [])].sort((a, b) => a.order - b.order),

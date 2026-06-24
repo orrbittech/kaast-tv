@@ -16,19 +16,39 @@ import { mediaCache } from '../cache/media-cache';
 import { playlistsApi } from '../api/playlists.api';
 import { playlistKeys } from '../api/query-keys';
 import { usePairing } from './PairingContext';
-import type { ControlCommand, Playlist } from '../api/types';
+import type {
+    ControlCommand,
+    ScheduledForDeviceResponse,
+    PlaylistItem,
+} from '../api/types';
 import { snapshotStore } from '../snapshot/snapshot-store';
 
 interface PlaybackContextValue {
     playbackState: PlaybackState;
     wsConnected: boolean;
-    loadAndPlay: (items: import('../api/types').PlaylistItem[]) => Promise<void>;
+    loadAndPlay: (
+        items: PlaylistItem[],
+        options?: {
+            playlistId?: string | null;
+            scheduleId?: string | null;
+            loop?: boolean;
+            startIndex?: number;
+            startPosition?: number;
+            playing?: boolean;
+        },
+    ) => Promise<void>;
     handleControlCommand: (command: ControlCommand) => void;
 }
 
 const PlaybackContext = createContext<PlaybackContextValue | null>(null);
 
 const SESSION_REPORT_INTERVAL_MS = 5000;
+
+function getPlaybackKey(response: ScheduledForDeviceResponse | undefined): string {
+    if (!response?.playlist) return 'none';
+    const scheduleId = response.schedule?.id ?? 'manual';
+    return `${response.playlist.id}:${scheduleId}`;
+}
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {
     const { pairing } = usePairing();
@@ -39,12 +59,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     );
     const [wsConnected, setWsConnected] = useState(false);
     const lastReportRef = useRef(0);
-    const lastLoadedPlaylistIdRef = useRef<string | null>(null);
+    const lastLoadedKeyRef = useRef<string | null>(null);
 
-    const { data: assignedPlaylist } = useQuery<Playlist | null>({
-        queryKey: playlistKeys.assigned(pairing?.deviceId ?? ''),
+    const { data: scheduledPayload } = useQuery<ScheduledForDeviceResponse>({
+        queryKey: playlistKeys.scheduled(pairing?.deviceId ?? ''),
         queryFn: ({ signal }) =>
-            playlistsApi.getAssignedPlaylist(pairing!.deviceId, signal),
+            playlistsApi.getScheduledForDevice(pairing!.deviceId, signal),
         enabled: !!pairing?.deviceId,
         refetchInterval: 30_000,
     });
@@ -52,6 +72,29 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         return playlistPlayer.subscribe(setPlaybackState);
     }, []);
+
+    const persistPlaybackState = useCallback(
+        async (action?: 'pause' | 'resume' | 'sync') => {
+            if (!pairing?.deviceId) return;
+            const snapshot = playlistPlayer.getSessionSnapshot();
+            try {
+                await playlistsApi.updateScheduledPlayback(pairing.deviceId, {
+                    action,
+                    playlistId: snapshot.playlistId,
+                    scheduleId: snapshot.scheduleId,
+                    currentItemIndex: snapshot.currentItemIndex,
+                    position: snapshot.position,
+                    duration: snapshot.duration,
+                    playing: snapshot.playing,
+                    mediaUrl: snapshot.mediaUrl,
+                    volume: snapshot.volume,
+                });
+            } catch {
+                // Non-blocking sync for TV playback continuity
+            }
+        },
+        [pairing?.deviceId],
+    );
 
     const reportSession = useCallback(
         (force = false) => {
@@ -65,49 +108,107 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                 ...snapshot,
                 snapshotData: snapshotStore.get(),
             });
+            void persistPlaybackState('sync');
         },
-        [],
+        [persistPlaybackState],
     );
 
     const loadAndPlay = useCallback(
-        async (items: import('../api/types').PlaylistItem[]) => {
-            await playlistPlayer.loadPlaylist(items, (url) =>
-                mediaCache.resolvePlaybackUri(url),
-            );
-            reportSession(true);
+        async (
+            items: PlaylistItem[],
+            options?: {
+                playlistId?: string | null;
+                scheduleId?: string | null;
+                loop?: boolean;
+                startIndex?: number;
+                startPosition?: number;
+                playing?: boolean;
+            },
+        ) => {
+            try {
+                await playlistPlayer.loadPlaylist(
+                    items,
+                    (url) => mediaCache.resolvePlaybackUri(url),
+                    {
+                        playlistId: options?.playlistId,
+                        scheduleId: options?.scheduleId,
+                        loop: options?.loop,
+                        startIndex: options?.startIndex,
+                        startPosition: options?.startPosition,
+                        playing: options?.playing,
+                    },
+                );
+                reportSession(true);
+            } catch (err) {
+                console.warn(
+                    '[Playback] Failed to load playlist:',
+                    err instanceof Error ? err.message : err,
+                );
+            }
         },
         [reportSession],
     );
 
-    const startAssignedPlaylist = useCallback(
-        async (playlist: Playlist) => {
-            if (!playlist.items?.length) return;
-            if (playlist.id === lastLoadedPlaylistIdRef.current) return;
+    const refreshScheduledPlaylist = useCallback(async () => {
+        if (!pairing?.deviceId) return;
+        await queryClient.invalidateQueries({
+            queryKey: playlistKeys.scheduled(pairing.deviceId),
+        });
+        try {
+            const payload = await playlistsApi.getScheduledForDevice(pairing.deviceId);
+            queryClient.setQueryData(
+                playlistKeys.scheduled(pairing.deviceId),
+                payload,
+            );
+        } catch {
+            // Query invalidation will retry on next poll
+        }
+    }, [pairing?.deviceId, queryClient]);
 
-            lastLoadedPlaylistIdRef.current = playlist.id;
-            await loadAndPlay(playlist.items);
+    const startScheduledPlayback = useCallback(
+        async (payload: ScheduledForDeviceResponse) => {
+            if (!payload.playlist?.items?.length) return;
+
+            const playbackKey = getPlaybackKey(payload);
+            const sameSlot = playbackKey === lastLoadedKeyRef.current;
+            if (sameSlot) return;
+
+            lastLoadedKeyRef.current = playbackKey;
+            const state = payload.playbackState;
+
+            await loadAndPlay(payload.playlist.items, {
+                playlistId: payload.playlist.id,
+                scheduleId: payload.schedule?.id ?? null,
+                loop: payload.schedule?.loopPlaylist ?? true,
+                startIndex: state?.currentItemIndex ?? 0,
+                startPosition: state?.position ?? 0,
+                playing: state?.playing ?? true,
+            });
             router.push('/(main)/player');
         },
         [loadAndPlay, router],
     );
 
     useEffect(() => {
-        if (assignedPlaylist === null) {
-            lastLoadedPlaylistIdRef.current = null;
+        if (!scheduledPayload?.playlist?.items?.length) {
+            if (scheduledPayload?.source === null) {
+                lastLoadedKeyRef.current = null;
+            }
             return;
         }
-        if (!assignedPlaylist?.items?.length) return;
-        void startAssignedPlaylist(assignedPlaylist);
-    }, [assignedPlaylist, wsConnected, startAssignedPlaylist]);
+        void startScheduledPlayback(scheduledPayload);
+    }, [scheduledPayload, wsConnected, startScheduledPlayback]);
 
     const handleControlCommand = useCallback(
         (command: ControlCommand) => {
             switch (command.command) {
                 case 'play':
                     playlistPlayer.play();
+                    void persistPlaybackState('resume');
                     break;
                 case 'pause':
                     playlistPlayer.pause();
+                    void persistPlaybackState('pause');
                     break;
                 case 'seek': {
                     const position = Number(command.payload?.position ?? 0);
@@ -121,19 +222,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                 }
                 case 'playPlaylist':
                     if (pairing?.deviceId) {
-                        queryClient.invalidateQueries({
-                            queryKey: playlistKeys.assigned(pairing.deviceId),
-                        });
-                        playlistsApi
-                            .getAssignedPlaylist(pairing.deviceId)
-                            .then((pl) => {
-                                if (pl?.items?.length) {
-                                    lastLoadedPlaylistIdRef.current = pl.id;
-                                    loadAndPlay(pl.items);
-                                    router.push('/(main)/player');
-                                }
-                            })
-                            .catch(() => undefined);
+                        lastLoadedKeyRef.current = null;
+                        void refreshScheduledPlaylist().then(() =>
+                            playlistsApi
+                                .getScheduledForDevice(pairing.deviceId)
+                                .then((payload) => {
+                                    if (payload.playlist?.items?.length) {
+                                        void startScheduledPlayback(payload);
+                                    }
+                                })
+                                .catch(() => undefined),
+                        );
                     }
                     break;
                 default:
@@ -141,7 +240,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             }
             reportSession(true);
         },
-        [pairing?.deviceId, queryClient, reportSession, loadAndPlay, router],
+        [
+            pairing?.deviceId,
+            queryClient,
+            reportSession,
+            persistPlaybackState,
+            startScheduledPlayback,
+            refreshScheduledPlaylist,
+        ],
     );
 
     useEffect(() => {
@@ -156,18 +262,22 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             setWsConnected(connected);
             if (connected && pairing.deviceId) {
                 queryClient.invalidateQueries({
-                    queryKey: playlistKeys.assigned(pairing.deviceId),
+                    queryKey: playlistKeys.scheduled(pairing.deviceId),
                 });
             }
         });
         const unsubControl = mediaSocket.onControl(handleControlCommand);
+        const unsubPlaylist = mediaSocket.onPlaylistUpdated(() => {
+            void refreshScheduledPlaylist();
+        });
 
         return () => {
             unsubConn();
             unsubControl();
+            unsubPlaylist();
             mediaSocket.disconnect();
         };
-    }, [pairing, handleControlCommand, queryClient]);
+    }, [pairing, handleControlCommand, queryClient, refreshScheduledPlaylist]);
 
     useEffect(() => {
         reportSession(true);
