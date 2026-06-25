@@ -9,7 +9,8 @@ export function useDeviceSubscription(
         queryKey: ['devices', 'subscription', deviceId ?? ''],
         queryFn: () => devicesApi.getSubscriptionStatus(deviceId!),
         enabled: (options?.enabled ?? true) && !!deviceId,
-        refetchInterval: 60_000,
-        staleTime: 30_000,
+        refetchInterval: 5 * 60 * 1000,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
     });
 }
