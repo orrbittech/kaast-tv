@@ -12,6 +12,7 @@ export interface Playlist {
 export interface PlaylistItem {
     id: string;
     playlistId?: string;
+    mediaId: string;
     mediaUrl: string;
     title?: string | null;
     duration?: number | null;
@@ -80,7 +81,7 @@ export interface PlaylistScheduleInfo {
     startTime: string;
     endTime: string;
     loopPlaylist: boolean;
-    priority: number;
+    priority: 'low' | 'medium' | 'high';
     repeatType: string;
     timezone: string;
 }

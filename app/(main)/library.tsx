@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
     FlatList,
     Pressable,
     StyleSheet,
@@ -9,11 +8,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '../../components/Text';
+import { SubscriptionExpiredScreen } from '../../components/SubscriptionExpiredScreen';
+import { TvStandbyScreen } from '../../components/TvStandbyScreen';
 import { usePairing } from '../../lib/context/PairingContext';
 import { usePlayback } from '../../lib/context/PlaybackContext';
 import { mediaCache } from '../../lib/cache/media-cache';
 import {
     useAssignedPlaylist,
+    useDeviceSubscription,
     useMediaCacheStatus,
 } from '../../lib/hooks';
 import type { PlaylistItem } from '../../lib/api/types';
@@ -87,6 +89,12 @@ export default function LibraryScreen() {
     const { loadAndPlay } = usePlayback();
     const { data: scheduled, isLoading, refetch, isRefetching } =
         useAssignedPlaylist(pairing?.deviceId);
+    const {
+        data: subscription,
+        isLoading: subscriptionLoading,
+        refetch: refetchSubscription,
+        isRefetching: subscriptionRefetching,
+    } = useDeviceSubscription(pairing?.deviceId);
     const playlist = scheduled?.playlist ?? null;
 
     const items = useMemo(
@@ -109,11 +117,32 @@ export default function LibraryScreen() {
         );
     }, [playlist?.id, playlist?.items]);
 
-    if (isLoading) {
+    if (isLoading || subscriptionLoading) {
+        return <TvStandbyScreen reason="loading" />;
+    }
+
+    if (subscription?.isActive === false) {
         return (
-            <View style={styles.centered}>
-                <ActivityIndicator size="large" color={colors.primary} />
-            </View>
+            <SubscriptionExpiredScreen
+                upgradeUrl={subscription.upgradeUrl}
+                context="playback"
+                onRefresh={() => {
+                    void refetchSubscription();
+                    void refetch();
+                }}
+                refreshing={subscriptionRefetching || isRefetching}
+            />
+        );
+    }
+
+    if (!playlist) {
+        return (
+            <TvStandbyScreen
+                reason="no_playlist"
+                onAction={() => refetch()}
+                actionLabel="Refresh"
+                actionLoading={isRefetching}
+            />
         );
     }
 
@@ -139,33 +168,17 @@ export default function LibraryScreen() {
                 </TVFocusGuideView>
             </View>
 
-            {!playlist ? (
-                <TVFocusGuideView style={styles.empty}>
-                    <Text style={styles.emptyTitle}>No playlist assigned</Text>
-                    <Text style={styles.emptyText}>
-                        Use the Kaast mobile app to assign a playlist to this
-                        device.
-                    </Text>
-                    <TVFocusableButton
-                        label={isRefetching ? 'Checking…' : 'Refresh'}
-                        onPress={() => refetch()}
-                        hasTVPreferredFocus
-                        style={{ marginTop: spacing.lg }}
+            <FlatList
+                data={items}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.list}
+                renderItem={({ item }) => (
+                    <PlaylistItemRow
+                        item={item}
+                        onPress={handlePlay}
                     />
-                </TVFocusGuideView>
-            ) : (
-                <FlatList
-                    data={items}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.list}
-                    renderItem={({ item }) => (
-                        <PlaylistItemRow
-                            item={item}
-                            onPress={handlePlay}
-                        />
-                    )}
-                />
-            )}
+                )}
+            />
         </View>
     );
 }
@@ -175,12 +188,6 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: colors.background,
         padding: spacing.xl,
-    },
-    centered: {
-        flex: 1,
-        backgroundColor: colors.background,
-        alignItems: 'center',
-        justifyContent: 'center',
     },
     header: {
         flexDirection: 'row',
@@ -247,23 +254,5 @@ const styles = StyleSheet.create({
     badge: {
         fontFamily: fonts.medium,
         fontSize: 14,
-    },
-    empty: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: spacing.xl,
-    },
-    emptyTitle: {
-        fontFamily: fonts.semibold,
-        color: colors.text,
-        fontSize: 28,
-        marginBottom: spacing.sm,
-    },
-    emptyText: {
-        color: colors.textMuted,
-        fontSize: 18,
-        textAlign: 'center',
-        maxWidth: 520,
     },
 });

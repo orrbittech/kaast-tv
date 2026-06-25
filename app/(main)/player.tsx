@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     Animated,
     StyleSheet,
     View,
@@ -11,6 +10,8 @@ import { Image } from 'expo-image';
 import { captureRef } from 'react-native-view-shot';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Text } from '../../components/Text';
+import { SubscriptionExpiredScreen } from '../../components/SubscriptionExpiredScreen';
+import { TvStandbyScreen } from '../../components/TvStandbyScreen';
 import { usePlayback } from '../../lib/context/PlaybackContext';
 import { playlistPlayer } from '../../lib/playback/playlist-player';
 import { useAssignedPlaylist, useDeviceSubscription } from '../../lib/hooks';
@@ -29,8 +30,11 @@ export default function PlayerScreen() {
     const { pairing } = usePairing();
     const { playbackState, loadAndPlay } = usePlayback();
     const { data: scheduled } = useAssignedPlaylist(pairing?.deviceId);
-    const { data: subscription } = useDeviceSubscription(pairing?.deviceId);
-    const subscriptionActive = subscription?.isActive !== false;
+    const {
+        data: subscription,
+        refetch: refetchSubscription,
+        isRefetching: subscriptionRefetching,
+    } = useDeviceSubscription(pairing?.deviceId);
     const playlist = scheduled?.playlist ?? null;
     const imageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const captureViewRef = useRef<View>(null);
@@ -111,6 +115,12 @@ export default function PlayerScreen() {
             deactivateKeepAwake(KEEP_AWAKE_TAG);
         };
     }, []);
+
+    useEffect(() => {
+        if (subscription?.isActive === false) {
+            playlistPlayer.pause();
+        }
+    }, [subscription?.isActive]);
 
     useEffect(() => {
         if (!playbackState.playlistId || playbackState.items.length === 0) return;
@@ -298,9 +308,9 @@ export default function PlayerScreen() {
         try {
             const base64 = await captureRef(captureViewRef, {
                 format: 'jpg',
-                quality: 0.5,
+                quality: 0.4,
                 result: 'base64',
-                width: 640,
+                width: 320,
             });
             snapshotStore.set(base64);
         } catch {
@@ -321,13 +331,33 @@ export default function PlayerScreen() {
         router.back();
     }, [router]);
 
-    if (!currentItem) {
+    if (subscription?.isActive === false) {
         return (
-            <View style={styles.centered}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.loadingText}>Loading playlist…</Text>
-            </View>
+            <SubscriptionExpiredScreen
+                upgradeUrl={subscription.upgradeUrl}
+                context="playback"
+                onRefresh={() => void refetchSubscription()}
+                refreshing={subscriptionRefetching}
+            />
         );
+    }
+
+    if (!currentItem) {
+        if (!playlist?.items?.length) {
+            return (
+                <TvStandbyScreen
+                    reason="no_playlist"
+                    onAction={() => router.back()}
+                    actionLabel="Back to library"
+                />
+            );
+        }
+
+        if (playbackState.items.length === 0) {
+            return <TvStandbyScreen reason="loading" />;
+        }
+
+        return <TvStandbyScreen reason="nothing_playing" />;
     }
 
     const displayTitle = currentItem.title ?? currentItem.mediaUrl;
@@ -388,17 +418,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#000',
-    },
-    centered: {
-        flex: 1,
-        backgroundColor: colors.background,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: spacing.md,
-    },
-    loadingText: {
-        color: colors.textMuted,
-        fontSize: 18,
     },
     media: {
         ...StyleSheet.absoluteFill,
