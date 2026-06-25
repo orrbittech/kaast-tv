@@ -3,6 +3,7 @@ import {
     DEFAULT_IMAGE_DURATION_SEC,
     getMediaTypeForFilter,
     isImageUrl,
+    isYouTubeUrl,
 } from '../utils/media';
 
 export interface PlaybackItem extends PlaylistItem {
@@ -79,6 +80,10 @@ export class PlaylistPlayerEngine {
         const playbackItems: PlaybackItem[] = [];
 
         for (const item of sorted) {
+            if (isYouTubeUrl(item.mediaUrl)) {
+                continue;
+            }
+
             const mediaType = getMediaTypeForFilter(item);
             try {
                 const playbackUri =
@@ -90,12 +95,13 @@ export class PlaylistPlayerEngine {
                     playbackUri,
                     mediaType,
                 });
-            } catch (err) {
-                console.warn(
-                    '[Playlist Player] Skipping unplayable item:',
-                    item.mediaUrl,
-                    err instanceof Error ? err.message : err,
-                );
+            } catch {
+                if (__DEV__) {
+                    console.debug(
+                        '[Playlist Player] Skipping unplayable item:',
+                        item.mediaUrl,
+                    );
+                }
             }
         }
 

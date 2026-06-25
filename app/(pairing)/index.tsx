@@ -11,6 +11,10 @@ import {
 } from '../../lib/hooks';
 import { colors, spacing } from '../../lib/theme/colors';
 import { fonts } from '../../lib/theme/fonts';
+import {
+    billingUrl,
+    formatBillingUrlForDisplay,
+} from '../../lib/billing-config';
 
 function formatCountdown(ms: number): string {
     const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -82,7 +86,10 @@ export default function PairingScreen() {
                 <Text style={styles.brand}>Kaast TV</Text>
                 <Text style={styles.title}>Trial ended</Text>
                 <Text style={styles.subtitle}>
-                    This organization&apos;s trial has ended. Subscribe at kaast.app/billing
+                    This organization&apos;s trial has ended. Subscribe at{' '}
+                    {status.upgradeUrl
+                        ? formatBillingUrlForDisplay(status.upgradeUrl)
+                        : formatBillingUrlForDisplay(billingUrl)}{' '}
                     from your phone, then pair this TV again.
                 </Text>
             </View>

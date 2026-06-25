@@ -37,8 +37,8 @@ export default function PlayerScreen() {
     const overlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const overlayOpacity = useRef(new Animated.Value(1)).current;
     const [overlayVisible, setOverlayVisible] = useState(true);
-    const [mediaLoadError, setMediaLoadError] = useState<string | null>(null);
     const loadedSourceKeyRef = useRef<string | null>(null);
+    const consecutiveSkipCountRef = useRef(0);
 
     const currentItem = playbackState.currentItem;
     const isImage = playlistPlayer.isImageItem(currentItem);
@@ -80,6 +80,31 @@ export default function PlayerScreen() {
         }, OVERLAY_HIDE_DELAY_MS);
     }, [overlayOpacity]);
 
+    const skipToNextPlayable = useCallback((reason?: string) => {
+        const { items, currentIndex } = playlistPlayer.getState();
+        if (items.length === 0) return;
+
+        if (__DEV__ && reason) {
+            console.debug('[TV Player] Skipping unplayable item:', reason);
+        }
+
+        loadedSourceKeyRef.current = null;
+        consecutiveSkipCountRef.current += 1;
+
+        if (consecutiveSkipCountRef.current >= items.length) {
+            consecutiveSkipCountRef.current = 0;
+            playlistPlayer.pause();
+            return;
+        }
+
+        const prevIndex = currentIndex;
+        playlistPlayer.skipNext();
+        if (playlistPlayer.getState().currentIndex === prevIndex) {
+            consecutiveSkipCountRef.current = 0;
+            playlistPlayer.pause();
+        }
+    }, []);
+
     useEffect(() => {
         activateKeepAwakeAsync(KEEP_AWAKE_TAG);
         return () => {
@@ -88,6 +113,8 @@ export default function PlayerScreen() {
     }, []);
 
     useEffect(() => {
+        if (!playbackState.playlistId || playbackState.items.length === 0) return;
+        consecutiveSkipCountRef.current = 0;
         showOverlay();
         if (playbackState.playing) {
             scheduleOverlayHide();
@@ -97,12 +124,7 @@ export default function PlayerScreen() {
                 clearTimeout(overlayHideTimerRef.current);
             }
         };
-    }, [
-        playbackState.currentIndex,
-        showOverlay,
-        scheduleOverlayHide,
-        playbackState.playing,
-    ]);
+    }, [playbackState.playlistId, showOverlay, scheduleOverlayHide]);
 
     useEffect(() => {
         if (!playbackState.playing) {
@@ -118,7 +140,7 @@ export default function PlayerScreen() {
     }, [player, playbackState.volume]);
 
     useEffect(() => {
-        setMediaLoadError(null);
+        consecutiveSkipCountRef.current = 0;
     }, [sourceKey]);
 
     useEffect(() => {
@@ -141,7 +163,7 @@ export default function PlayerScreen() {
                 await player.replaceAsync(mediaUri);
                 if (cancelled) return;
 
-                setMediaLoadError(null);
+                consecutiveSkipCountRef.current = 0;
 
                 const position = playlistPlayer.getState().position;
                 if (position > 0) {
@@ -161,9 +183,7 @@ export default function PlayerScreen() {
                 }
             } catch (err) {
                 if (!cancelled) {
-                    loadedSourceKeyRef.current = null;
-                    playlistPlayer.pause();
-                    setMediaLoadError(
+                    skipToNextPlayable(
                         err instanceof Error ? err.message : 'Failed to load media',
                     );
                 }
@@ -173,7 +193,7 @@ export default function PlayerScreen() {
         return () => {
             cancelled = true;
         };
-    }, [player, isImage, usesMediaPlayer, mediaUri, sourceKey]);
+    }, [player, isImage, usesMediaPlayer, mediaUri, sourceKey, skipToNextPlayable]);
 
     useEffect(() => {
         if (!player || isImage) return;
@@ -215,10 +235,7 @@ export default function PlayerScreen() {
             }
             if (status === 'error') {
                 const message = error?.message ?? 'Playback failed';
-                console.warn('[TV Player] Media load error:', message);
-                loadedSourceKeyRef.current = null;
-                playlistPlayer.pause();
-                setMediaLoadError(message);
+                skipToNextPlayable(message);
             }
         });
 
@@ -227,7 +244,7 @@ export default function PlayerScreen() {
             timeSub.remove();
             statusSub.remove();
         };
-    }, [player, playbackState.currentIndex]);
+    }, [player, playbackState.currentIndex, skipToNextPlayable]);
 
     useEffect(() => {
         if (imageTimerRef.current) {
@@ -304,13 +321,6 @@ export default function PlayerScreen() {
         router.back();
     }, [router]);
 
-    const handleContainerFocus = useCallback(() => {
-        showOverlay();
-        if (playbackState.playing) {
-            scheduleOverlayHide();
-        }
-    }, [showOverlay, scheduleOverlayHide, playbackState.playing]);
-
     if (!currentItem) {
         return (
             <View style={styles.centered}>
@@ -323,11 +333,7 @@ export default function PlayerScreen() {
     const displayTitle = currentItem.title ?? currentItem.mediaUrl;
 
     return (
-        <View
-            style={styles.container}
-            onFocus={handleContainerFocus}
-            focusable
-        >
+        <View style={styles.container}>
             <View ref={captureViewRef} style={styles.captureArea} collapsable={false}>
                 {isImage ? (
                     <Image
@@ -337,17 +343,6 @@ export default function PlayerScreen() {
                     />
                 ) : (
                     <>
-                        {mediaLoadError ? (
-                            <View style={styles.errorBackdrop}>
-                                <Text style={styles.errorTitle}>Unable to play media</Text>
-                                <Text style={styles.errorMessage} numberOfLines={4}>
-                                    {mediaLoadError}
-                                </Text>
-                                <Text style={styles.errorHint} numberOfLines={2}>
-                                    {currentItem.mediaUrl}
-                                </Text>
-                            </View>
-                        ) : null}
                         {isAudio ? (
                             <View style={styles.audioBackdrop}>
                                 <Text style={styles.audioTitle} numberOfLines={3}>
@@ -436,31 +431,6 @@ const styles = StyleSheet.create({
         fontSize: 18,
         textTransform: 'uppercase',
         letterSpacing: 2,
-    },
-    errorBackdrop: {
-        ...StyleSheet.absoluteFill,
-        backgroundColor: '#000',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: spacing.xl * 2,
-        gap: spacing.md,
-    },
-    errorTitle: {
-        fontFamily: fonts.semibold,
-        color: colors.text,
-        fontSize: 28,
-        textAlign: 'center',
-    },
-    errorMessage: {
-        color: colors.textMuted,
-        fontSize: 18,
-        textAlign: 'center',
-    },
-    errorHint: {
-        color: colors.textMuted,
-        fontSize: 14,
-        textAlign: 'center',
-        opacity: 0.7,
     },
     overlay: {
         position: 'absolute',
