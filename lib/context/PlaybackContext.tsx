@@ -60,6 +60,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const [wsConnected, setWsConnected] = useState(false);
     const lastReportRef = useRef(0);
     const lastLoadedKeyRef = useRef<string | null>(null);
+    const lastSentSnapshotRef = useRef<string | null>(null);
 
     const { data: scheduledPayload } = useQuery<ScheduledForDeviceResponse>({
         queryKey: playlistKeys.scheduled(pairing?.deviceId ?? ''),
@@ -104,9 +105,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             }
             lastReportRef.current = now;
             const snapshot = playlistPlayer.getSessionSnapshot();
+            const currentSnapshot = snapshotStore.get();
+            const snapshotChanged =
+                currentSnapshot !== lastSentSnapshotRef.current;
+            if (snapshotChanged) {
+                lastSentSnapshotRef.current = currentSnapshot;
+            }
             mediaSocket.emitSessionState({
                 ...snapshot,
-                snapshotData: snapshotStore.get(),
+                ...(snapshotChanged ? { snapshotData: currentSnapshot } : {}),
             });
             void persistPlaybackState('sync');
         },

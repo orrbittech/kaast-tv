@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '../../components/Text';
 import { PairingCodeDisplay } from '../../components/PairingCodeDisplay';
+import { SubscriptionExpiredScreen } from '../../components/SubscriptionExpiredScreen';
 import { usePairing } from '../../lib/context/PairingContext';
 import {
     usePairingStatus,
@@ -11,10 +12,6 @@ import {
 } from '../../lib/hooks';
 import { colors, spacing } from '../../lib/theme/colors';
 import { fonts } from '../../lib/theme/fonts';
-import {
-    billingUrl,
-    formatBillingUrlForDisplay,
-} from '../../lib/billing-config';
 
 function formatCountdown(ms: number): string {
     const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -71,7 +68,7 @@ export default function PairingScreen() {
             locationId: status.locationId ?? null,
             pairedAt: new Date().toISOString(),
         });
-        router.replace('/(main)/library');
+        router.replace('/(main)/player');
     }, [status, deviceId, setPaired, router]);
 
     useEffect(() => {
@@ -82,17 +79,10 @@ export default function PairingScreen() {
 
     if (status?.status === 'subscription_required') {
         return (
-            <View style={styles.container}>
-                <Text style={styles.brand}>Kaast TV</Text>
-                <Text style={styles.title}>Trial ended</Text>
-                <Text style={styles.subtitle}>
-                    This organization&apos;s trial has ended. Subscribe at{' '}
-                    {status.upgradeUrl
-                        ? formatBillingUrlForDisplay(status.upgradeUrl)
-                        : formatBillingUrlForDisplay(billingUrl)}{' '}
-                    from your phone, then pair this TV again.
-                </Text>
-            </View>
+            <SubscriptionExpiredScreen
+                upgradeUrl={status.upgradeUrl}
+                context="pairing"
+            />
         );
     }
 
