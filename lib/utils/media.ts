@@ -1,3 +1,17 @@
+/** Check if URL points to a YouTube page (not directly playable). */
+export function isYouTubeUrl(url: string): boolean {
+    try {
+        const host = new URL(url).hostname.replace(/^www\./, '');
+        return (
+            host === 'youtube.com' ||
+            host === 'youtu.be' ||
+            host.endsWith('.youtube.com')
+        );
+    } catch {
+        return /youtu\.?be/i.test(url);
+    }
+}
+
 /** Check if URL points to an image (usable as cover art or slideshow item). */
 export function isImageUrl(url: string): boolean {
     try {
@@ -101,6 +115,10 @@ async function validateImageUrl(mediaUrl: string): Promise<MediaUrlValidation> {
 }
 
 async function validateStreamMediaUrl(mediaUrl: string): Promise<MediaUrlValidation> {
+    if (isYouTubeUrl(mediaUrl)) {
+        return { ok: false, error: 'YouTube URLs are not directly playable' };
+    }
+
     try {
         let response = await fetch(mediaUrl, { method: 'HEAD', redirect: 'follow' });
 
